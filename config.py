@@ -1,4 +1,5 @@
-import os
-
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'embrapa_secret' # Use uma variável de ambiente em produção
+    SECRET_KEY = 'embrapa_secret'
+    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:@localhost:3306/ambrapa_db'
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    USER_CREATION_SECRET = 'chave_super_secreta'  # chave para autorizar criação de usuário

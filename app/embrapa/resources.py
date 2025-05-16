@@ -1,13 +1,17 @@
-import time
-from flask_restx import Namespace, Resource, marshal
+from flask_restx import Resource
 from flask import jsonify
-from ..parsers import embrapa_parser
-from ..models import embrapa_data_model, cultivar_data_model
-from selenium.common.exceptions import WebDriverException
-from ...core.web_scraper import extrair_dados_generico, extrair_dados_producao, extrair_dados_processamento, extrair_dados_comercializacao, extrair_dados_importacao, extrair_dados_exportacao
-from ...core.security import token_required
-
-api = Namespace('embrapa', description='Operações relacionadas aos dados da Embrapa')
+from app.models import embrapa_data_model
+from app.utils import token_required
+from app.embrapa import embrapa_ns
+from app.embrapa.extractors import (
+    extrair_dados_generico,
+    extrair_dados_producao,
+    extrair_dados_processamento,
+    extrair_dados_comercializacao,
+    extrair_dados_importacao,
+    extrair_dados_exportacao,
+)
+from flask_restx.reqparse import RequestParser
 
 ABA_OPCAO_MAP = {
     "Producao": "opt_02",
@@ -39,19 +43,21 @@ SUBMENU_EXPORTACAO_MAP = {
     "Suco_de_uva": "subopt_04",
 }
 
-@api.route('/')
+embrapa_parser = RequestParser()
+embrapa_parser.add_argument('ano', type=int, default=2020, help='Ano dos dados')
+embrapa_parser.add_argument('aba', type=str, required=True, help='Aba para recuperar os dados (Producao, etc.)')
+embrapa_parser.add_argument('subopcao', type=str, help='Sub-opção para abas como Importacao/Exportacao')
+
+@embrapa_ns.route('/')
 class EmbrapaDataResource(Resource):
-    @api.doc('get_embrapa_data', security="Bearer Auth")
-    @api.expect(embrapa_parser)
-    @api.response(200, 'Success', model=[embrapa_data_model])
-    @api.response(400, 'Invalid request')
-    @api.response(401, 'Authentication required')
-    @api.response(500, 'Internal server error')
+    @embrapa_ns.doc('get_embrapa_data', security="Bearer Auth")
+    @embrapa_ns.expect(embrapa_parser)
+    @embrapa_ns.response(200, 'Success', model=[embrapa_data_model])
+    @embrapa_ns.response(400, 'Invalid request')
+    @embrapa_ns.response(401, 'Authentication required')
+    @embrapa_ns.response(500, 'Internal server error')
     @token_required
     def get(self):
-        """
-        Recupera dados do site da Embrapa.
-        """
         args = embrapa_parser.parse_args()
         ano = args['ano']
         nome_aba = args['aba']
@@ -103,28 +109,16 @@ class EmbrapaDataResource(Resource):
             try:
                 df = extrair_dados_generico(nome_aba, url, extrator_aba)
                 if not df.empty:
-                    if nome_aba == "Processamento":
-                        return jsonify([marshal(record, cultivar_data_model) for record in df.to_dict(orient="records")])
-                    else:
-                        return jsonify([marshal(record, embrapa_data_model) for record in df.to_dict(orient="records")])
+                    return jsonify(df.to_dict(orient="records"))
                 else:
                     return {
                         'error': f"Não foi possível extrair os dados da aba {nome_aba}."
                     }, 500
             except Exception as e:
-                api.logger.error(f"Erro na tentativa {tentativa}: {e}")
+                import logging
+                logging.error(f"Erro na tentativa {tentativa}: {e}")
                 if tentativa < tentativas:
-                    api.logger.info(f"Tentando novamente em {intervalo_tentativas} segundos...")
+                    import time
                     time.sleep(intervalo_tentativas)
                 else:
-                    return {'error': f"Falha ao extrair dados após {tentativas} tentativas: {e}"}, 500
-                
-            except WebDriverException as e:
-                api.logger.error(f"Erro de WebDriver na tentativa {tentativa}: {e}")
-                if tentativa < tentativas:
-                    api.logger.info(f"Tentando novamente em {intervalo_tentativas} segundos...")
-                    time.sleep(intervalo_tentativas)
-                else:
-                    return {'error': f"Falha ao inicializar o WebDriver após {tentativas} tentativas: {e}"}, 500
-
-        return {'error': f"Falha ao obter os dados após {tentativas} tentativas."}, 500
+                    return {'error': str(e)}, 500
