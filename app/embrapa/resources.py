@@ -50,7 +50,7 @@ embrapa_parser.add_argument('subopcao', type=str, help='Sub-opção para abas co
 
 @embrapa_ns.route('/')
 class EmbrapaDataResource(Resource):
-    @embrapa_ns.doc('get_embrapa_data', security="Bearer Auth")
+    @embrapa_ns.doc('get_embrapa_data', security="BearerAuth")
     @embrapa_ns.expect(embrapa_parser)
     @embrapa_ns.response(200, 'Success', model=[embrapa_data_model])
     @embrapa_ns.response(400, 'Invalid request')

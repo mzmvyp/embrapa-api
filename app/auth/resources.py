@@ -41,7 +41,8 @@ class Login(Resource):
         user = User.query.filter_by(username=args['username']).first()
         if user and user.check_password(args['password']):
             payload = {
-                'sub': user.username,
+                # MUDANÇA AQUI: Use o ID do usuário e a chave 'user_id'
+                'user_id': user.id,
                 'iat': datetime.datetime.utcnow(),
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
             }
