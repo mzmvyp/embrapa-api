@@ -1,152 +1,140 @@
 import logging
 import traceback
-import time
 import pandas as pd
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
+from bs4 import BeautifulSoup
+
+# Removido Selenium imports (já feito anteriormente)
 
 def extrair_dados_generico(nome_aba, url, extrator_aba):
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-
-    driver = webdriver.Chrome(options=options)
-    driver.get(url)
     try:
-        df = extrator_aba(driver)
-        driver.quit()
+        # Faz a requisição HTTP para a URL
+        response = requests.get(url)
+        response.raise_for_status() # Lança um erro para status de erro HTTP (4xx ou 5xx)
+
+        # --- INÍCIO DA MODIFICAÇÃO PARA TRATAMENTO DE ENCODING ---
+        # 1. Tenta detectar o encoding automaticamente
+        response.encoding = response.apparent_encoding
+
+        # Opcional: Se a detecção automática falhar e você souber o encoding (ex: 'iso-8859-1' ou 'utf-8')
+        # você pode forçar. Use isso APENAS se a detecção automática não funcionar.
+        # response.encoding = 'iso-8859-1' # Ou 'utf-8'
+
+        # Cria um objeto BeautifulSoup para parsear o HTML
+        # Passamos response.text, que agora deve ter o encoding correto
+        soup = BeautifulSoup(response.text, 'lxml')
+        # --- FIM DA MODIFICAÇÃO PARA TRATAMENTO DE ENCODING ---
+
+        # Agora, passamos o objeto 'soup' para a função extratora
+        df = extrator_aba(soup)
         return df
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Erro de requisição HTTP ao extrair dados da aba {nome_aba} de {url}: {e}")
+        logging.error(traceback.format_exc())
+        raise e
     except Exception as e:
         logging.error(f"Erro ao extrair dados genéricos da aba {nome_aba}: {e}")
         logging.error(traceback.format_exc())
-        driver.quit()
         raise e
 
-def extrair_dados_producao(driver):
-    """Extrai os dados da aba de Producao."""
+# --- As funções de extração (extrair_dados_producao, extrair_dados_processamento, etc.)
+# permanecem as mesmas, pois a modificação do encoding é feita antes de BeautifulSoup. ---
+
+def extrair_dados_producao(soup):
+    """Extrai os dados da aba de Producao usando BeautifulSoup."""
     try:
-        tabela = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "table.tb_base.tb_dados"))
-        )
-        cabecalho = ["Produto", "Quantidade (ton)"]  # Ajuste este cabeçalho!
+        tabela = soup.select_one("table.tb_base.tb_dados")
+        if not tabela:
+            raise Exception("Tabela de Producao não encontrada no HTML.")
+        cabecalho = ["Produto", "Quantidade (ton)"]
         dados = []
-        linhas = tabela.find_elements(By.TAG_NAME, "tr")
-        for linha in linhas[1:]:  # Inclui o cabeçalho, ajuste se necessário
-            celulas = linha.find_elements(By.TAG_NAME, "td")
+        linhas = tabela.find_all("tr")
+        for linha in linhas[1:]:
+            celulas = linha.find_all("td")
             if len(celulas) == len(cabecalho):
                 dado = {}
                 for i, coluna in enumerate(cabecalho):
-                    dado[coluna] = celulas[i].text.strip()
+                    dado[coluna] = celulas[i].get_text(strip=True)
                 dados.append(dado)
         return pd.DataFrame(dados)
     except Exception as e:
         raise Exception(f"Erro ao extrair dados de Producao: {e}")
 
-
-
-def extrair_dados_processamento(driver):
-    """Extrai os dados da aba de Processamento."""
+def extrair_dados_processamento(soup):
+    """Extrai os dados da aba de Processamento usando BeautifulSoup."""
     try:
-        tabela = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "table.tb_base.tb_dados"))
-        )
+        tabela = soup.select_one("table.tb_base.tb_dados")
+        if not tabela:
+            raise Exception("Tabela de Processamento não encontrada no HTML.")
         cabecalho = ["Cultivar", "Quantidade (Kg)"]
         dados = []
-        linhas = tabela.find_elements(By.TAG_NAME, "tr")
-
+        linhas = tabela.find_all("tr")
         for linha in linhas[1:-1]:
-            celulas = linha.find_elements(By.TAG_NAME, "td")
+            celulas = linha.find_all("td")
             if len(celulas) == len(cabecalho):
                 dado = {}
                 for i, coluna in enumerate(cabecalho):
-                    dado[coluna] = celulas[i].text.strip()
+                    dado[coluna] = celulas[i].get_text(strip=True)
                 dados.append(dado)
-
         return pd.DataFrame(dados)
     except Exception as e:
         raise Exception(f"Erro ao extrair dados de Processamento: {e}")
 
-
-
-def extrair_dados_comercializacao(driver):
-    """Extrai os dados da aba de Comercializacao."""
+def extrair_dados_comercializacao(soup):
+    """Extrai os dados da aba de Comercializacao usando BeautifulSoup."""
     try:
-        tabela = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    "table.tb_base.tb_dados",
-                )  # Ajuste este seletor!!!
-            )
-        )
-        cabecalho = ["Produto", "Valor"]  # Ajuste este cabeçalho!!!
+        tabela = soup.select_one("table.tb_base.tb_dados")
+        if not tabela:
+            raise Exception("Tabela de Comercializacao não encontrada no HTML.")
+        cabecalho = ["Produto", "Valor"]
         dados = []
-        linhas = tabela.find_elements(By.TAG_NAME, "tr")
-        for linha in linhas[1:]:  # Inclui o cabeçalho, ajuste se necessário
-            celulas = linha.find_elements(By.TAG_NAME, "td")
+        linhas = tabela.find_all("tr")
+        for linha in linhas[1:]:
+            celulas = linha.find_all("td")
             if len(celulas) == len(cabecalho):
                 dado = {}
                 for i, coluna in enumerate(cabecalho):
-                    dado[coluna] = celulas[i].text.strip()
+                    dado[coluna] = celulas[i].get_text(strip=True)
                 dados.append(dado)
         return pd.DataFrame(dados)
     except Exception as e:
         raise Exception(f"Erro ao extrair dados de Comercializacao: {e}")
 
-
-
-def extrair_dados_importacao(driver):
-    """Extrai os dados da aba de Importacao."""
+def extrair_dados_importacao(soup):
+    """Extrai os dados da aba de Importacao usando BeautifulSoup."""
     try:
-        tabela = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    "table.tb_base.tb_dados",
-                )  # Ajuste este seletor!!!
-            )
-        )
-        cabecalho = ["Produto", "Quantidade", "Valor (US$)"]  # Ajuste este cabeçalho!!!
+        tabela = soup.select_one("table.tb_base.tb_dados")
+        if not tabela:
+            raise Exception("Tabela de Importacao não encontrada no HTML.")
+        cabecalho = ["Produto", "Quantidade", "Valor (US$)"]
         dados = []
-        linhas = tabela.find_elements(By.TAG_NAME, "tr")
-        for linha in linhas[1:]:  # Inclui o cabeçalho, ajuste se necessário
-            celulas = linha.find_elements(By.TAG_NAME, "td")
+        linhas = tabela.find_all("tr")
+        for linha in linhas[1:]:
+            celulas = linha.find_all("td")
             if len(celulas) == len(cabecalho):
                 dado = {}
                 for i, coluna in enumerate(cabecalho):
-                    dado[coluna] = celulas[i].text.strip()
+                    dado[coluna] = celulas[i].get_text(strip=True)
                 dados.append(dado)
         return pd.DataFrame(dados)
     except Exception as e:
         raise Exception(f"Erro ao extrair dados de Importacao: {e}")
 
-
-
-def extrair_dados_exportacao(driver):
-    """Extrai os dados da aba de Exportacao."""
+def extrair_dados_exportacao(soup):
+    """Extrai os dados da aba de Exportacao usando BeautifulSoup."""
     try:
-        tabela = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    "table.tb_base.tb_dados",
-                )  # Ajuste este seletor!!!
-            )
-        )
-        cabecalho = ["Produto", "Quantidade", "Valor (US$)"]  # Ajuste este cabeçalho!!!
+        tabela = soup.select_one("table.tb_base.tb_dados")
+        if not tabela:
+            raise Exception("Tabela de Exportacao não encontrada no HTML.")
+        cabecalho = ["Produto", "Quantidade", "Valor (US$)"]
         dados = []
-        linhas = tabela.find_elements(By.TAG_NAME, "tr")
-        for linha in linhas[1:]:  # Inclui o cabeçalho, ajuste se necessário
-            celulas = linha.find_elements(By.TAG_NAME, "td")
+        linhas = tabela.find_all("tr")
+        for linha in linhas[1:]:
+            celulas = linha.find_all("td")
             if len(celulas) == len(cabecalho):
                 dado = {}
                 for i, coluna in enumerate(cabecalho):
-                    dado[coluna] = celulas[i].text.strip()
+                    dado[coluna] = celulas[i].get_text(strip=True)
                 dados.append(dado)
         return pd.DataFrame(dados)
     except Exception as e:
